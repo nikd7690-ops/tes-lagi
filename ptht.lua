@@ -35,6 +35,7 @@ _G.PTHT_Plant = false
 _G.PTHT_Harvest = false
 _G.PTHT_SlotIndex = nil
 _G.PTHT_ItemID = nil
+_G.PTHT_RestockPos2D = nil
 local TILE_SIZE = 4.5 
 local SCAN_RADIUS = 3 -- Jarak sensor bot mencari tanah kosong/siap panen
 
@@ -154,28 +155,18 @@ Instance.new("UICorner", StorageBtn).CornerRadius = UDim.new(0, 4)
 local StorageStroke = Instance.new("UIStroke", StorageBtn)
 StorageStroke.Color = Theme.Accent
 StorageStroke.Thickness = 1
-
+-- Update UI Tombol Save
+StorageLbl.Text = "Set Restock Pos" -- Ganti labelnya
 StorageBtn.MouseButton1Click:Connect(function()
-    local Hitbox = workspace:FindFirstChild("Hitbox") and workspace.Hitbox:FindFirstChild(LP.Name)
-    local Root = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
-    local targetPart = Hitbox or Root
-    
-    if targetPart then
-        local posX = math.floor(targetPart.Position.X / 4.5 + 0.5)
-        local posY = math.floor(targetPart.Position.Y / 4.5 + 0.5)
-        
-        -- Simpan koordinat ke memori bot
-        _G.PTHT_StoragePos3D = targetPart.Position
-        _G.PTHT_StoragePos2D = Vector2.new(targetPart.Position.X, targetPart.Position.Y)
-        
+    local currentPos = GetPlayerPos2D()
+    if currentPos then
+        _G.PTHT_RestockPos2D = currentPos
+        local posX = math.floor(currentPos.X / 4.5 + 0.5)
+        local posY = math.floor(currentPos.Y / 4.5 + 0.5)
         StorageCoord.Text = "[" .. posX .. ", " .. posY .. "]"
-        StorageCoord.TextColor3 = Theme.Accent
-        
-        StorageBtn.Text = "SAVED!"
-        TS:Create(StorageBtn, TweenInfo.new(0.2), {BackgroundColor3 = Theme.Accent, TextColor3 = Theme.Main}):Play()
+        StorageBtn.Text = "RESTOCK OK!"
         task.wait(1)
         StorageBtn.Text = "SAVE"
-        TS:Create(StorageBtn, TweenInfo.new(0.2), {BackgroundColor3 = Theme.Main, TextColor3 = Theme.Accent}):Play()
     end
 end)
 
@@ -260,52 +251,52 @@ task.spawn(function()
                 local currentPos2D = GetPlayerPos2D()
                 if not currentPos2D then return end
 
-                -- 1. CEK ISI TAS (INVENTORY CHECK)
+                -- [[ 1. CEK STOK BIBIT (INVENTORY CHECK) ]]
                 local Inv = require(RS.Modules.Inventory)
-                -- Ambil nama bersih item (misal "Tomato" dari "tomato_seed")
-                local cropKey = _G.PTHT_ItemID and string.lower(_G.PTHT_ItemID):gsub("_sapling", ""):gsub("_seed", "") or ""
-                
-                local totalDiTas = 0
+                local hasBibit = false
+                local bibitID = _G.PTHT_ItemID -- ID bibit dari dropdown
+
+                -- Cek apakah bibit yang dipilih masih ada di tas
                 for _, item in pairs(Inv.Stacks) do
-                    if type(item) == "table" and item.Id and string.find(string.lower(item.Id), cropKey) then
-                        -- Hitung hanya buahnya, bukan bibit/sapling
-                        if not string.find(string.lower(item.Id), "sapling") and not string.find(string.lower(item.Id), "seed") then
-                            totalDiTas = totalDiTas + (item.Amount or 1)
+                    if type(item) == "table" and item.Id == bibitID then
+                        if (item.Amount or 0) > 0 then
+                            hasBibit = true
+                            break
                         end
                     end
                 end
 
-                -- 2. LOGIKA MENUJU GUDANG (Jika Tas Penuh)
-                if totalDiTas >= (_G.PTHT_MinDropAmount or 50) and _G.PTHT_StoragePos2D then
-                    -- Jalan ke Gudang
+                -- [[ 2. LOGIKA AMBIL BIBIT (RESTOCK) ]]
+                -- Jika bibit HABIS dan kamu sudah SAVE posisi pengambilan
+                if not hasBibit and _G.PTHT_StoragePos2D and _G.PTHT_Plant then
+                    -- Simpan posisi kebun terakhir biar bot bisa balik lagi
+                    local lastFarmPos = currentPos2D 
+                    
+                    -- Jalan ke tempat ambil bibit (Restock Pos)
                     SmoothMove(MyRemote, currentPos2D, _G.PTHT_StoragePos2D)
                     currentPos2D = _G.PTHT_StoragePos2D
+                    task.wait(0.3)
                     
-                    -- Proses Buang Barang
-                    for slot, item in pairs(Inv.Stacks) do
-                        if type(item) == "table" and item.Id and string.find(string.lower(item.Id), cropKey) then
-                            if not string.find(string.lower(item.Id), "sapling") and not string.find(string.lower(item.Id), "seed") then
-                                -- Step 1: Pilih Slot
-                                PlayerDrop:FireServer(tonumber(slot))
-                                task.wait(0.1)
-                                -- Step 2: Masukkan Jumlah (Pop-up)
-                                UIPromptEvent:FireServer({["Inputs"] = {["amt"] = tostring(item.Amount or 1)}})
-                                task.wait(0.2)
-                            end
-                        end
+                    -- Ambil barang (Memukul/Fist ke koordinat tersebut)
+                    -- Kita pukul 5 kali untuk memastikan item keluar dan terambil
+                    local pickX = math.floor(currentPos2D.X / TILE_SIZE + 0.5)
+                    local pickY = math.floor(currentPos2D.Y / TILE_SIZE + 0.5)
+                    
+                    for i = 1, 5 do
+                        pcall(function() FistRemote:FireServer(Vector2.new(pickX, pickY)) end)
+                        task.wait(0.2)
                     end
-                    -- Setelah buang, balik ke posisi awal (kebun)
-                    if _G.SavedPos3D then
-                        SmoothMove(MyRemote, currentPos2D, Vector2.new(_G.SavedPos3D.X, _G.SavedPos3D.Y))
-                        currentPos2D = Vector2.new(_G.SavedPos3D.X, _G.SavedPos3D.Y)
-                    end
+                    
+                    -- Balik lagi ke posisi kebun terakhir
+                    SmoothMove(MyRemote, currentPos2D, lastFarmPos)
+                    currentPos2D = lastFarmPos
+                    return -- Keluar loop sebentar biar inventory refresh
                 end
 
-                -- 3. LOGIKA SCAN SEKITAR (PLANT & HARVEST)
+                -- [[ 3. LOGIKA SCAN SEKITAR (PLANT & HARVEST) ]]
                 local charX = math.floor(currentPos2D.X / TILE_SIZE + 0.5)
                 local charY = math.floor(currentPos2D.Y / TILE_SIZE + 0.5)
 
-                -- Fokus radius kecil 2 kotak agar stabil di world berlantai
                 for x = charX - 1, charX + 1 do
                     for y = charY - 1, charY + 1 do
                         if not (_G.PTHT_Harvest or _G.PTHT_Plant) then break end
@@ -314,8 +305,8 @@ task.spawn(function()
                         local blokBawah = WorldManager.GetTile(x, y - 1, 2)
                         local targetGridPos = Vector2.new(x * TILE_SIZE, y * TILE_SIZE)
 
-                        -- [[ AUTO PLANT ]]
-                        if _G.PTHT_Plant and _G.PTHT_SlotIndex then
+                        -- AUTO PLANT (Hanya jalan kalau ada bibit)
+                        if _G.PTHT_Plant and _G.PTHT_SlotIndex and hasBibit then
                             if blokSekarang == nil and blokBawah ~= nil then
                                 if (targetGridPos - currentPos2D).Magnitude > 1.5 then
                                     SmoothMove(MyRemote, currentPos2D, targetGridPos)
@@ -326,7 +317,7 @@ task.spawn(function()
                             end
                         end
 
-                        -- [[ AUTO HARVEST ]]
+                        -- AUTO HARVEST
                         if _G.PTHT_Harvest and blokSekarang then
                             local namaBlok = WorldManager.NumberToStringMap[blokSekarang]
                             if namaBlok and not string.match(string.lower(namaBlok), "_sapling") then
@@ -344,5 +335,6 @@ task.spawn(function()
                 end
             end
         end)
+        if not success then warn("Bot Logic Error: " .. tostring(err)) end
     end
 end)
