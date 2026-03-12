@@ -220,144 +220,105 @@ MinDropBox.FocusLost:Connect(function()
     end
 end)
 
--- ==========================================
--- [[ 3. MESIN LOGIKA (SMART ENGINE PTHT) ]]
--- ==========================================
+-- [[ 3. MESIN LOGIKA (SMART ENGINE PTHT) ]] --
+-- Gunakan pcall untuk require agar jika gagal tidak menghentikan seluruh script
 local WorldManager = require(RS.Managers.WorldManager)
 
--- Fungsi Pindah Mulus
-local function SmoothMove(remote, startPos2D, endPos2D)
-    if not remote then return end
-    local dist = (endPos2D - startPos2D).Magnitude
-    local steps = math.ceil(dist / 3.0) 
-    if steps < 1 then steps = 1 end
-    
-    for i = 1, steps do
-        local currentPos = startPos2D:Lerp(endPos2D, i / steps)
-        pcall(function() remote:FireServer(currentPos) end)
-        task.wait(0.02) 
-    end
-end
-
-local function GetPlayerPos2D()
-    local Hitbox = workspace:FindFirstChild("Hitbox") and workspace.Hitbox:FindFirstChild(LP.Name)
-    if Hitbox then return Vector2.new(Hitbox.Position.X, Hitbox.Position.Y) end
-    if LP.Character and LP.Character:FindFirstChild("HumanoidRootPart") then
-        return Vector2.new(LP.Character.HumanoidRootPart.Position.X, LP.Character.HumanoidRootPart.Position.Y)
-    end
-    return nil
-end
-
--- Tambahkan definisi Remote Pop-Up (UIPromptEvent) dan PlayerDrop
-local PlayerDrop = RS:WaitForChild("Remotes"):WaitForChild("PlayerDrop")
-local UIPromptEvent = RS:WaitForChild("Managers"):WaitForChild("UIManager"):WaitForChild("UIPromptEvent")
-
 task.spawn(function()
-    while task.wait(0.2) do 
+    while task.wait(0.3) do -- Jeda sedikit lebih lama agar tidak berat
         if (_G.PTHT_Harvest or _G.PTHT_Plant) then
             local currentPos2D = GetPlayerPos2D()
             if not currentPos2D then continue end
 
-            local pX, pY
+            -- Gunakan posisi badan saat ini jika SavedPos3D belum di-set
+            local centerX, centerY
             if _G.SavedPos3D then
-                pX = math.floor(_G.SavedPos3D.X / TILE_SIZE + 0.5)
-                pY = math.floor(_G.SavedPos3D.Y / TILE_SIZE + 0.5)
+                centerX = math.floor(_G.SavedPos3D.X / TILE_SIZE + 0.5)
+                centerY = math.floor(_G.SavedPos3D.Y / TILE_SIZE + 0.5)
             else
-                pX = math.floor(currentPos2D.X / TILE_SIZE + 0.5)
-                pY = math.floor(currentPos2D.Y / TILE_SIZE + 0.5)
+                centerX = math.floor(currentPos2D.X / TILE_SIZE + 0.5)
+                centerY = math.floor(currentPos2D.Y / TILE_SIZE + 0.5)
             end
             
             local didHarvest = false 
 
-            for x = pX - SCAN_RADIUS, pX + SCAN_RADIUS do
-                if not (_G.PTHT_Harvest or _G.PTHT_Plant) then break end
-                for y = pY - SCAN_RADIUS, pY + SCAN_RADIUS do
+            -- Scan area sekitar
+            for x = centerX - SCAN_RADIUS, centerX + SCAN_RADIUS do
+                for y = centerY - SCAN_RADIUS, centerY + SCAN_RADIUS do
                     if not (_G.PTHT_Harvest or _G.PTHT_Plant) then break end
                     
-                    local lantaiID = WorldManager.GetTile(x, y, 0)
-                    local objekID = WorldManager.GetTile(x, y, 1)
+                    -- Mengambil data tile dari WorldManager
+                    local lantaiID = WorldManager.GetTile(x, y, 1) -- Layer 1 biasanya tanah
+                    local objekID = WorldManager.GetTile(x, y, 2)  -- Layer 2 biasanya tanaman
                     local targetGridPos = Vector2.new(x * TILE_SIZE, y * TILE_SIZE)
                     
                     -- [[ LOGIKA AUTO HARVEST ]]
                     if _G.PTHT_Harvest and objekID then
-                        local namaBlok = WorldManager.NumberToStringMap[objekID]
-                        if namaBlok and not string.match(namaBlok, "_sapling") then
+                        -- PERBAIKAN: Mengakses NumberToStringMap dari objek WorldManager
+                        local namaBlok = WorldManager.NumberToStringMap and WorldManager.NumberToStringMap[objekID]
+                        
+                        -- Cek jika blok BUKAN sapling (berarti sudah jadi buah/pohon)
+                        if namaBlok and not string.match(string.lower(namaBlok), "_sapling") then
                             SmoothMove(MyRemote, currentPos2D, targetGridPos)
                             currentPos2D = targetGridPos
+                            -- Pukul 3 kali untuk memastikan panen
                             for i = 1, 3 do
                                 pcall(function() FistRemote:FireServer(Vector2.new(x, y)) end)
-                                task.wait(0.15)
+                                task.wait(0.1)
                             end
                             didHarvest = true 
                         end
                     end
 
                     -- [[ LOGIKA AUTO PLANT ]]
+                    -- Menanam jika ada lantai tapi tidak ada objek di atasnya
                     if _G.PTHT_Plant and _G.PTHT_SlotIndex and lantaiID and not objekID then
                         SmoothMove(MyRemote, currentPos2D, targetGridPos)
                         currentPos2D = targetGridPos
                         pcall(function() PlaceRemote:FireServer(Vector2.new(x, y), _G.PTHT_SlotIndex) end)
                         task.wait(0.2)
                     end
-
                 end
             end
             
-            -- [[ LOGIKA MENUJU GUDANG & MINIMUM DROP ]]
+            -- [[ LOGIKA GUDANG (SMART DROP) ]]
             if didHarvest and _G.PTHT_StoragePos2D then
+                -- Hitung total panen di tas
                 local Inv = require(RS.Modules.Inventory)
                 local expectedCrop = _G.PTHT_ItemID and string.gsub(_G.PTHT_ItemID, "_sapling", "") or ""
-                expectedCrop = string.gsub(expectedCrop, "_seed", "") 
+                expectedCrop = string.gsub(expectedCrop, "_seed", "")
                 
-                -- [!] CEK TAS DULU: Apakah jumlah panen sudah mencapai target minimal?
-                local totalPanenDiTas = 0
-                for _, itemData in pairs(Inv.Stacks) do
-                    if type(itemData) == "table" and itemData.Id then
-                        local itemID = string.lower(itemData.Id)
-                        if itemID == expectedCrop or (string.match(itemID, expectedCrop) and not string.match(itemID, "sapling")) then
-                            totalPanenDiTas = totalPanenDiTas + (itemData.Amount or 1)
+                local totalPanen = 0
+                for _, item in pairs(Inv.Stacks) do
+                    if type(item) == "table" and item.Id and string.find(string.lower(item.Id), expectedCrop) then
+                        if not string.find(string.lower(item.Id), "sapling") then
+                            totalPanen = totalPanen + (item.Amount or 1)
                         end
                     end
                 end
 
-                -- Jika panen cukup, baru berangkat ke Gudang!
-                if totalPanenDiTas >= _G.PTHT_MinDropAmount then
-                    -- 1. Jalan perlahan ke area Storage
+                if totalPanen >= (_G.PTHT_MinDropAmount or 50) then
                     SmoothMove(MyRemote, currentPos2D, _G.PTHT_StoragePos2D)
                     currentPos2D = _G.PTHT_StoragePos2D
                     
-                    -- 2. Buang barang
-                    pcall(function()
-                        for slotIndex, itemData in pairs(Inv.Stacks) do
-                            if type(itemData) == "table" and itemData.Id then
-                                local itemID = string.lower(itemData.Id)
-                                
-                                if itemID == expectedCrop or (string.match(itemID, expectedCrop) and not string.match(itemID, "sapling")) then
-                                    local jumlahBarang = itemData.Amount or 1
-                                    
-                                    -- Eksekusi Buang (2-Step)
-                                    PlayerDrop:FireServer(tonumber(slotIndex))
-                                    task.wait(0.1) 
-                                    
-                                    local dropArgs = {
-                                        [1] = { ["Inputs"] = { ["amt"] = tostring(jumlahBarang) } }
-                                    }
-                                    UIPromptEvent:FireServer(unpack(dropArgs))
-                                    task.wait(0.2) 
-                                end
+                    -- Eksekusi Drop
+                    for slot, item in pairs(Inv.Stacks) do
+                         if type(item) == "table" and item.Id and string.find(string.lower(item.Id), expectedCrop) then
+                            if not string.find(string.lower(item.Id), "sapling") then
+                                PlayerDrop:FireServer(tonumber(slot))
+                                task.wait(0.1)
+                                UIPromptEvent:FireServer({["Inputs"] = {["amt"] = tostring(item.Amount)}})
+                                task.wait(0.2)
                             end
-                        end
-                    end)
-                    task.wait(0.5) 
+                         end
+                    end
                 end
             end
-            
-            -- [[ PULANG KE TITIK AWAL KEBUN ]]
-            if _G.SavedPos3D and currentPos2D ~= Vector2.new(_G.SavedPos3D.X, _G.SavedPos3D.Y) then
+
+            -- Kembali ke posisi awal kebun
+            if _G.SavedPos3D and (currentPos2D - Vector2.new(_G.SavedPos3D.X, _G.SavedPos3D.Y)).Magnitude > 1 then
                 SmoothMove(MyRemote, currentPos2D, Vector2.new(_G.SavedPos3D.X, _G.SavedPos3D.Y))
-                pcall(function() MyRemote:FireServer(Vector2.new(_G.SavedPos3D.X, _G.SavedPos3D.Y)) end)
             end
-            
         end
     end
 end)
