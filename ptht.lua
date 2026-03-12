@@ -257,7 +257,7 @@ task.spawn(function()
     local Y_MIN, Y_MAX = 6, 60
 
     while task.wait(0.3) do 
-        if (_G.PT_Plant or _G.PTHT_Harvest) then -- Cek apakah salah satu aktif
+        if (_G.PTHT_Plant or _G.PTHT_Harvest) then -- Cek apakah salah satu aktif
             local currentPos2D = GetPlayerPos2D()
             if not currentPos2D then continue end
             
