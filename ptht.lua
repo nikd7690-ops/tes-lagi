@@ -251,59 +251,45 @@ end
 local PlayerDrop = RS:WaitForChild("Remotes"):WaitForChild("PlayerDrop")
 local UIPromptEvent = RS:WaitForChild("Managers"):WaitForChild("UIManager"):WaitForChild("UIPromptEvent")
 
--- [[ 3. MESIN LOGIKA (OPTIMIZED FULL WORLD) ]] --
+-- [[ RE-CHECK LOGIKA DALAM TASK.SPAWN ]] --
 task.spawn(function()
-    -- Batas World sesuai koordinatmu
     local X_MIN, X_MAX = 0, 100
     local Y_MIN, Y_MAX = 6, 60
 
     while task.wait(0.3) do 
-        if (_G.PTHT_Harvest or _G.PTHT_Plant) then
+        if (_G.PT_Plant or _G.PTHT_Harvest) then -- Cek apakah salah satu aktif
             local currentPos2D = GetPlayerPos2D()
             if not currentPos2D then continue end
             
             local didHarvest = false 
 
-            -- Scan dari koordinat X: 0 ke 100
             for x = X_MIN, X_MAX do
-                -- Scan dari koordinat Y: 6 ke 60
                 for y = Y_MIN, Y_MAX do
-                    -- Berhenti jika fitur dimatikan di tengah jalan
                     if not (_G.PTHT_Harvest or _G.PTHT_Plant) then break end
                     
-                    -- Cek Layer 2 (Blok Fisik)
                     local blokSekarang = WorldManager.GetTile(x, y, 2)
                     local blokBawah = WorldManager.GetTile(x, y - 1, 2)
-                    
                     local targetGridPos = Vector2.new(x * TILE_SIZE, y * TILE_SIZE)
-                    
-                    -- [[ LOGIKA AUTO PLANT ]]
-                    -- Syarat: Target (x,y) kosong DAN bawahnya (y-1) ada tanah
-                    if _G.PTHT_Plant and _G.PTHT_SlotIndex and (blokSekarang == nil) and (blokBawah ~= nil) then
-                        -- Cek Jarak: Bot hanya akan lari jika jaraknya di bawah 50 unit 
-                        -- (agar gerakan lebih alami dan tidak langsung "terbang" ke ujung)
-                        if (targetGridPos - currentPos2D).Magnitude < 50 then
+
+                    -- Hanya kerjakan jika dalam radius 50 (Biar aman dari ban/kick)
+                    if (targetGridPos - currentPos2D).Magnitude < 50 then
+                        
+                        -- LOGIKA TANAM
+                        if _G.PTHT_Plant and _G.PTHT_SlotIndex and (blokSekarang == nil) and (blokBawah ~= nil) then
                             SmoothMove(MyRemote, currentPos2D, targetGridPos)
                             currentPos2D = targetGridPos
-                            
                             pcall(function() 
                                 PlaceRemote:FireServer(Vector2.new(x, y), _G.PTHT_SlotIndex) 
                             end)
-                            
-                            task.wait(0.1) -- Jeda tipis biar tidak kick
+                            task.wait(0.1)
                         end
-                    end
 
-                    -- [[ LOGIKA AUTO HARVEST ]]
-                    if _G.PTHT_Harvest and blokSekarang then
-                        local namaBlok = WorldManager.NumberToStringMap[blokSekarang]
-                        -- Jika itu tanaman dan bukan bibit (_sapling)
-                        if namaBlok and not string.match(string.lower(namaBlok), "_sapling") then
-                            if (targetGridPos - currentPos2D).Magnitude < 50 then
+                        -- LOGIKA PANEN
+                        if _G.PTHT_Harvest and blokSekarang then
+                            local namaBlok = WorldManager.NumberToStringMap[blokSekarang]
+                            if namaBlok and not string.match(string.lower(namaBlok), "_sapling") then
                                 SmoothMove(MyRemote, currentPos2D, targetGridPos)
                                 currentPos2D = targetGridPos
-                                
-                                -- Pukul untuk panen
                                 for i = 1, 3 do
                                     pcall(function() FistRemote:FireServer(Vector2.new(x, y)) end)
                                     task.wait(0.05)
