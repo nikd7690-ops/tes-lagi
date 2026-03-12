@@ -115,6 +115,112 @@ CreateToggle("Smart Auto Plant", "PTHT_Plant")
 CreateToggle("Smart Auto Harvest", "PTHT_Harvest")
 
 -- ==========================================
+-- [[ 2.5. UI SAVE STORAGE POSITION ]]
+-- ==========================================
+local StorageFrame = Instance.new("Frame", Page)
+StorageFrame.Size = UDim2.new(1, -10, 0, 35)
+StorageFrame.BackgroundColor3 = Theme.Item
+Instance.new("UICorner", StorageFrame).CornerRadius = UDim.new(0, 6)
+
+local StorageLbl = Instance.new("TextLabel", StorageFrame)
+StorageLbl.Size = UDim2.new(0.4, 0, 1, 0)
+StorageLbl.Position = UDim2.new(0, 10, 0, 0)
+StorageLbl.Text = "Save Storage Pos"
+StorageLbl.TextColor3 = Theme.Text
+StorageLbl.Font = Enum.Font.Gotham
+StorageLbl.TextSize = 12
+StorageLbl.BackgroundTransparency = 1
+StorageLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+local StorageCoord = Instance.new("TextLabel", StorageFrame)
+StorageCoord.Size = UDim2.new(0.3, 0, 1, 0)
+StorageCoord.Position = UDim2.new(0.4, 0, 0, 0)
+StorageCoord.Text = "[ NONE ]"
+StorageCoord.TextColor3 = Theme.SubText
+StorageCoord.Font = Enum.Font.Gotham
+StorageCoord.TextSize = 10
+StorageCoord.BackgroundTransparency = 1
+StorageCoord.TextXAlignment = Enum.TextXAlignment.Center
+
+local StorageBtn = Instance.new("TextButton", StorageFrame)
+StorageBtn.Size = UDim2.new(0.25, -10, 0.1, 22)
+StorageBtn.Position = UDim2.new(0.75, 0, 0.5, -11)
+StorageBtn.BackgroundColor3 = Theme.Main
+StorageBtn.Text = "SAVE"
+StorageBtn.TextColor3 = Theme.Accent
+StorageBtn.Font = Enum.Font.GothamBold
+StorageBtn.TextSize = 10
+Instance.new("UICorner", StorageBtn).CornerRadius = UDim.new(0, 4)
+local StorageStroke = Instance.new("UIStroke", StorageBtn)
+StorageStroke.Color = Theme.Accent
+StorageStroke.Thickness = 1
+
+StorageBtn.MouseButton1Click:Connect(function()
+    local Hitbox = workspace:FindFirstChild("Hitbox") and workspace.Hitbox:FindFirstChild(LP.Name)
+    local Root = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+    local targetPart = Hitbox or Root
+    
+    if targetPart then
+        local posX = math.floor(targetPart.Position.X / 4.5 + 0.5)
+        local posY = math.floor(targetPart.Position.Y / 4.5 + 0.5)
+        
+        -- Simpan koordinat ke memori bot
+        _G.PTHT_StoragePos3D = targetPart.Position
+        _G.PTHT_StoragePos2D = Vector2.new(targetPart.Position.X, targetPart.Position.Y)
+        
+        StorageCoord.Text = "[" .. posX .. ", " .. posY .. "]"
+        StorageCoord.TextColor3 = Theme.Accent
+        
+        StorageBtn.Text = "SAVED!"
+        TS:Create(StorageBtn, TweenInfo.new(0.2), {BackgroundColor3 = Theme.Accent, TextColor3 = Theme.Main}):Play()
+        task.wait(1)
+        StorageBtn.Text = "SAVE"
+        TS:Create(StorageBtn, TweenInfo.new(0.2), {BackgroundColor3 = Theme.Main, TextColor3 = Theme.Accent}):Play()
+    end
+end)
+
+-- ==========================================
+-- [[ 2.6. UI INPUT MINIMUM DROP ]]
+-- ==========================================
+_G.PTHT_MinDropAmount = 50 -- Bawaan awal: buang jika sudah terkumpul 50
+
+local MinDropFrame = Instance.new("Frame", Page)
+MinDropFrame.Size = UDim2.new(1, -10, 0, 35)
+MinDropFrame.BackgroundColor3 = Theme.Item
+Instance.new("UICorner", MinDropFrame).CornerRadius = UDim.new(0, 6)
+
+local MinDropLbl = Instance.new("TextLabel", MinDropFrame)
+MinDropLbl.Size = UDim2.new(0.6, 0, 1, 0)
+MinDropLbl.Position = UDim2.new(0, 10, 0, 0)
+MinDropLbl.Text = "Min Drop Amount:"
+MinDropLbl.TextColor3 = Theme.Text
+MinDropLbl.Font = Enum.Font.Gotham
+MinDropLbl.TextSize = 12
+MinDropLbl.BackgroundTransparency = 1
+MinDropLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+local MinDropBox = Instance.new("TextBox", MinDropFrame)
+MinDropBox.Size = UDim2.new(0.35, -10, 0.8, 0)
+MinDropBox.Position = UDim2.new(0.65, 0, 0.1, 0)
+MinDropBox.BackgroundColor3 = Theme.Main
+MinDropBox.TextColor3 = Theme.Accent
+MinDropBox.Font = Enum.Font.GothamBold
+MinDropBox.TextSize = 12
+MinDropBox.Text = tostring(_G.PTHT_MinDropAmount)
+Instance.new("UICorner", MinDropBox).CornerRadius = UDim.new(0, 6)
+
+-- Simpan angka saat selesai diketik
+MinDropBox.FocusLost:Connect(function()
+    local inputAngka = tonumber(MinDropBox.Text)
+    if inputAngka and inputAngka > 0 then
+        _G.PTHT_MinDropAmount = inputAngka
+    else
+        -- Kalau salah ketik huruf, kembalikan ke angka sebelumnya
+        MinDropBox.Text = tostring(_G.PTHT_MinDropAmount)
+    end
+end)
+
+-- ==========================================
 -- [[ 3. MESIN LOGIKA (SMART ENGINE PTHT) ]]
 -- ==========================================
 local WorldManager = require(RS.Managers.WorldManager)
@@ -142,16 +248,27 @@ local function GetPlayerPos2D()
     return nil
 end
 
+-- Tambahkan definisi Remote Pop-Up (UIPromptEvent) dan PlayerDrop
+local PlayerDrop = RS:WaitForChild("Remotes"):WaitForChild("PlayerDrop")
+local UIPromptEvent = RS:WaitForChild("Managers"):WaitForChild("UIManager"):WaitForChild("UIPromptEvent")
+
 task.spawn(function()
     while task.wait(0.2) do 
-        if (_G.PTHT_Harvest or _G.PTHT_Plant) and _G.SavedPos3D then
+        if (_G.PTHT_Harvest or _G.PTHT_Plant) then
             local currentPos2D = GetPlayerPos2D()
             if not currentPos2D then continue end
 
-            -- Gunakan Save Position sebagai titik pusat Area Perkebunan
-            local pX = math.floor(_G.SavedPos3D.X / TILE_SIZE + 0.5)
-            local pY = math.floor(_G.SavedPos3D.Y / TILE_SIZE + 0.5)
+            local pX, pY
+            if _G.SavedPos3D then
+                pX = math.floor(_G.SavedPos3D.X / TILE_SIZE + 0.5)
+                pY = math.floor(_G.SavedPos3D.Y / TILE_SIZE + 0.5)
+            else
+                pX = math.floor(currentPos2D.X / TILE_SIZE + 0.5)
+                pY = math.floor(currentPos2D.Y / TILE_SIZE + 0.5)
+            end
             
+            local didHarvest = false 
+
             for x = pX - SCAN_RADIUS, pX + SCAN_RADIUS do
                 if not (_G.PTHT_Harvest or _G.PTHT_Plant) then break end
                 for y = pY - SCAN_RADIUS, pY + SCAN_RADIUS do
@@ -164,28 +281,21 @@ task.spawn(function()
                     -- [[ LOGIKA AUTO HARVEST ]]
                     if _G.PTHT_Harvest and objekID then
                         local namaBlok = WorldManager.NumberToStringMap[objekID]
-                        
-                        -- Cek 100% Grow Time (Bukan sapling lagi)
                         if namaBlok and not string.match(namaBlok, "_sapling") then
-                            -- Jalan mulus mendekati tanaman
                             SmoothMove(MyRemote, currentPos2D, targetGridPos)
                             currentPos2D = targetGridPos
-                            
-                            -- Pukul 3 kali sampai hancur
                             for i = 1, 3 do
                                 pcall(function() FistRemote:FireServer(Vector2.new(x, y)) end)
                                 task.wait(0.15)
                             end
+                            didHarvest = true 
                         end
                     end
 
                     -- [[ LOGIKA AUTO PLANT ]]
                     if _G.PTHT_Plant and _G.PTHT_SlotIndex and lantaiID and not objekID then
-                        -- Jalan mulus mendekati tanah kosong
                         SmoothMove(MyRemote, currentPos2D, targetGridPos)
                         currentPos2D = targetGridPos
-                        
-                        -- Tanam bibit dari tas
                         pcall(function() PlaceRemote:FireServer(Vector2.new(x, y), _G.PTHT_SlotIndex) end)
                         task.wait(0.2)
                     end
@@ -193,8 +303,57 @@ task.spawn(function()
                 end
             end
             
-            -- Setelah selesai menyisir kebun, pulang perlahan ke titik Save Position
-            if currentPos2D ~= Vector2.new(_G.SavedPos3D.X, _G.SavedPos3D.Y) then
+            -- [[ LOGIKA MENUJU GUDANG & MINIMUM DROP ]]
+            if didHarvest and _G.PTHT_StoragePos2D then
+                local Inv = require(RS.Modules.Inventory)
+                local expectedCrop = _G.PTHT_ItemID and string.gsub(_G.PTHT_ItemID, "_sapling", "") or ""
+                expectedCrop = string.gsub(expectedCrop, "_seed", "") 
+                
+                -- [!] CEK TAS DULU: Apakah jumlah panen sudah mencapai target minimal?
+                local totalPanenDiTas = 0
+                for _, itemData in pairs(Inv.Stacks) do
+                    if type(itemData) == "table" and itemData.Id then
+                        local itemID = string.lower(itemData.Id)
+                        if itemID == expectedCrop or (string.match(itemID, expectedCrop) and not string.match(itemID, "sapling")) then
+                            totalPanenDiTas = totalPanenDiTas + (itemData.Amount or 1)
+                        end
+                    end
+                end
+
+                -- Jika panen cukup, baru berangkat ke Gudang!
+                if totalPanenDiTas >= _G.PTHT_MinDropAmount then
+                    -- 1. Jalan perlahan ke area Storage
+                    SmoothMove(MyRemote, currentPos2D, _G.PTHT_StoragePos2D)
+                    currentPos2D = _G.PTHT_StoragePos2D
+                    
+                    -- 2. Buang barang
+                    pcall(function()
+                        for slotIndex, itemData in pairs(Inv.Stacks) do
+                            if type(itemData) == "table" and itemData.Id then
+                                local itemID = string.lower(itemData.Id)
+                                
+                                if itemID == expectedCrop or (string.match(itemID, expectedCrop) and not string.match(itemID, "sapling")) then
+                                    local jumlahBarang = itemData.Amount or 1
+                                    
+                                    -- Eksekusi Buang (2-Step)
+                                    PlayerDrop:FireServer(tonumber(slotIndex))
+                                    task.wait(0.1) 
+                                    
+                                    local dropArgs = {
+                                        [1] = { ["Inputs"] = { ["amt"] = tostring(jumlahBarang) } }
+                                    }
+                                    UIPromptEvent:FireServer(unpack(dropArgs))
+                                    task.wait(0.2) 
+                                end
+                            end
+                        end
+                    end)
+                    task.wait(0.5) 
+                end
+            end
+            
+            -- [[ PULANG KE TITIK AWAL KEBUN ]]
+            if _G.SavedPos3D and currentPos2D ~= Vector2.new(_G.SavedPos3D.X, _G.SavedPos3D.Y) then
                 SmoothMove(MyRemote, currentPos2D, Vector2.new(_G.SavedPos3D.X, _G.SavedPos3D.Y))
                 pcall(function() MyRemote:FireServer(Vector2.new(_G.SavedPos3D.X, _G.SavedPos3D.Y)) end)
             end
