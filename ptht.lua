@@ -268,21 +268,33 @@ task.spawn(function()
             
             local didHarvest = false 
 
+            -- Scan area sekitar
             for x = pX - SCAN_RADIUS, pX + SCAN_RADIUS do
                 for y = pY - SCAN_RADIUS, pY + SCAN_RADIUS do
                     if not (_G.PTHT_Harvest or _G.PTHT_Plant) then break end
                     
-                    -- SESUAI FILE WORLDMANAGER:
-                    -- Layer 1 = Lantai/Tanah
-                    -- Layer 2 = Objek/Tanaman
-                    local lantaiID = WorldManager.GetTile(x, y, 1)
-                    local objekID = WorldManager.GetTile(x, y, 2)
+                    -- LOGIKA LAYER SESUAI ANALISISMU:
+                    -- Kita cek Layer 2 untuk Blok Fisik (Pijakan)
+                    local blokSekarang = WorldManager.GetTile(x, y, 2)
+                    local blokBawah = WorldManager.GetTile(x, y - 1, 2) -- Cek blok di bawah target
+                    
                     local targetGridPos = Vector2.new(x * TILE_SIZE, y * TILE_SIZE)
                     
+                    -- [[ LOGIKA AUTO PLANT ]]
+                    -- Syarat: Slot bibit ada, target (x,y) KOSONG, tapi di bawahnya (x, y-1) ADA blok
+                    if _G.PTHT_Plant and _G.PTHT_SlotIndex and (blokSekarang == nil) and (blokBawah ~= nil) then
+                        SmoothMove(MyRemote, currentPos2D, targetGridPos)
+                        currentPos2D = targetGridPos
+                        pcall(function() 
+                            PlaceRemote:FireServer(Vector2.new(x, y), _G.PTHT_SlotIndex) 
+                        end)
+                        task.wait(0.2)
+                    end
+
                     -- [[ LOGIKA AUTO HARVEST ]]
-                    if _G.PTHT_Harvest and objekID then
-                        -- Ambil nama dari NumberToStringMap milik WorldManager
-                        local namaBlok = WorldManager.NumberToStringMap[objekID]
+                    if _G.PTHT_Harvest and blokSekarang then
+                        local namaBlok = WorldManager.NumberToStringMap[blokSekarang]
+                        -- Jika itu tanaman yang sudah jadi (bukan sapling)
                         if namaBlok and not string.match(string.lower(namaBlok), "_sapling") then
                             SmoothMove(MyRemote, currentPos2D, targetGridPos)
                             currentPos2D = targetGridPos
@@ -292,15 +304,6 @@ task.spawn(function()
                             end
                             didHarvest = true 
                         end
-                    end
-
-                    -- [[ LOGIKA AUTO PLANT ]]
-                    -- Menanam jika ada lantai (lantaiID) tapi tidak ada tanaman (objekID)
-                    if _G.PTHT_Plant and _G.PTHT_SlotIndex and lantaiID and not objekID then
-                        SmoothMove(MyRemote, currentPos2D, targetGridPos)
-                        currentPos2D = targetGridPos
-                        pcall(function() PlaceRemote:FireServer(Vector2.new(x, y), _G.PTHT_SlotIndex) end)
-                        task.wait(0.2)
                     end
                 end
             end
