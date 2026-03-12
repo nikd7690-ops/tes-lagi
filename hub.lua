@@ -379,6 +379,6 @@ local Tab4 = AddTab("PTHT")
 
 AddModule(Tab2, "Autofarm Menu", "Auto Farm Menu", "https://raw.githubusercontent.com/NuansaHub/NuansaHUB/refs/heads/main/AutoFarm.lua")
 AddModule(Tab3, "Misc", "Misc Menu", "https://raw.githubusercontent.com/NuansaHub/NuansaHUB/refs/heads/main/Mics.lua")
-AddModule(Tab4, "PTHT", "PTHT Menu", "https://raw.githubusercontent.com/NuansaHub/NuansaHUB/refs/heads/main/PTHT.lua")
+AddModule(Tab4, "PTHT", "PTHT Menu", "https://raw.githubusercontent.com/nikd7690-ops/tes-lagi/refs/heads/main/ptht.lua")
 
 if Tabs[1] then Pages[1].Visible = true; Tabs[1].BackgroundColor3 = Theme.Accent; Tabs[1].TextColor3 = Theme.Main; Tabs[1].UIStroke.Transparency = 0 end
