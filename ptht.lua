@@ -252,90 +252,97 @@ local PlayerDrop = RS:WaitForChild("Remotes"):WaitForChild("PlayerDrop")
 local UIPromptEvent = RS:WaitForChild("Managers"):WaitForChild("UIManager"):WaitForChild("UIPromptEvent")
 
 -- [[ RE-CHECK LOGIKA DALAM TASK.SPAWN ]] --
+-- [[ 3. MESIN LOGIKA (SMART POSITION + AUTO STORAGE) ]] --
 task.spawn(function()
-    local X_MIN, X_MAX = 0, 100
-    local Y_MIN, Y_MAX = 6, 60
+    while task.wait(0.2) do 
+        local success, err = pcall(function()
+            if (_G.PTHT_Plant or _G.PTHT_Harvest) then
+                local currentPos2D = GetPlayerPos2D()
+                if not currentPos2D then return end
 
-    while task.wait(0.3) do 
-        if (_G.PTHT_Plant or _G.PTHT_Harvest) then -- Cek apakah salah satu aktif
-            local currentPos2D = GetPlayerPos2D()
-            if not currentPos2D then continue end
-            
-            local didHarvest = false 
-
-            for x = X_MIN, X_MAX do
-                for y = Y_MIN, Y_MAX do
-                    if not (_G.PTHT_Harvest or _G.PTHT_Plant) then break end
-                    
-                    local blokSekarang = WorldManager.GetTile(x, y, 2)
-                    local blokBawah = WorldManager.GetTile(x, y - 1, 2)
-                    local targetGridPos = Vector2.new(x * TILE_SIZE, y * TILE_SIZE)
-
-                    -- Hanya kerjakan jika dalam radius 50 (Biar aman dari ban/kick)
-                    if (targetGridPos - currentPos2D).Magnitude < 50 then
-                        
-                        -- LOGIKA TANAM
-                        if _G.PTHT_Plant and _G.PTHT_SlotIndex and (blokSekarang == nil) and (blokBawah ~= nil) then
-                            SmoothMove(MyRemote, currentPos2D, targetGridPos)
-                            currentPos2D = targetGridPos
-                            pcall(function() 
-                                PlaceRemote:FireServer(Vector2.new(x, y), _G.PTHT_SlotIndex) 
-                            end)
-                            task.wait(0.1)
-                        end
-
-                        -- LOGIKA PANEN
-                        if _G.PTHT_Harvest and blokSekarang then
-                            local namaBlok = WorldManager.NumberToStringMap[blokSekarang]
-                            if namaBlok and not string.match(string.lower(namaBlok), "_sapling") then
-                                SmoothMove(MyRemote, currentPos2D, targetGridPos)
-                                currentPos2D = targetGridPos
-                                for i = 1, 3 do
-                                    pcall(function() FistRemote:FireServer(Vector2.new(x, y)) end)
-                                    task.wait(0.05)
-                                end
-                                didHarvest = true 
-                            end
-                        end
-                    end
-                end
-            end
-            
-            -- [[ LOGIKA MENUJU GUDANG ]]
-            if didHarvest and _G.PTHT_StoragePos2D then
+                -- 1. CEK ISI TAS (INVENTORY CHECK)
                 local Inv = require(RS.Modules.Inventory)
+                -- Ambil nama bersih item (misal "Tomato" dari "tomato_seed")
                 local cropKey = _G.PTHT_ItemID and string.lower(_G.PTHT_ItemID):gsub("_sapling", ""):gsub("_seed", "") or ""
                 
                 local totalDiTas = 0
                 for _, item in pairs(Inv.Stacks) do
                     if type(item) == "table" and item.Id and string.find(string.lower(item.Id), cropKey) then
-                        if not string.find(string.lower(item.Id), "sapling") then
+                        -- Hitung hanya buahnya, bukan bibit/sapling
+                        if not string.find(string.lower(item.Id), "sapling") and not string.find(string.lower(item.Id), "seed") then
                             totalDiTas = totalDiTas + (item.Amount or 1)
                         end
                     end
                 end
 
-                if totalDiTas >= (_G.PTHT_MinDropAmount or 50) then
+                -- 2. LOGIKA MENUJU GUDANG (Jika Tas Penuh)
+                if totalDiTas >= (_G.PTHT_MinDropAmount or 50) and _G.PTHT_StoragePos2D then
+                    -- Jalan ke Gudang
                     SmoothMove(MyRemote, currentPos2D, _G.PTHT_StoragePos2D)
                     currentPos2D = _G.PTHT_StoragePos2D
                     
+                    -- Proses Buang Barang
                     for slot, item in pairs(Inv.Stacks) do
                         if type(item) == "table" and item.Id and string.find(string.lower(item.Id), cropKey) then
-                            if not string.find(string.lower(item.Id), "sapling") then
+                            if not string.find(string.lower(item.Id), "sapling") and not string.find(string.lower(item.Id), "seed") then
+                                -- Step 1: Pilih Slot
                                 PlayerDrop:FireServer(tonumber(slot))
                                 task.wait(0.1)
+                                -- Step 2: Masukkan Jumlah (Pop-up)
                                 UIPromptEvent:FireServer({["Inputs"] = {["amt"] = tostring(item.Amount or 1)}})
                                 task.wait(0.2)
                             end
                         end
                     end
+                    -- Setelah buang, balik ke posisi awal (kebun)
+                    if _G.SavedPos3D then
+                        SmoothMove(MyRemote, currentPos2D, Vector2.new(_G.SavedPos3D.X, _G.SavedPos3D.Y))
+                        currentPos2D = Vector2.new(_G.SavedPos3D.X, _G.SavedPos3D.Y)
+                    end
+                end
+
+                -- 3. LOGIKA SCAN SEKITAR (PLANT & HARVEST)
+                local charX = math.floor(currentPos2D.X / TILE_SIZE + 0.5)
+                local charY = math.floor(currentPos2D.Y / TILE_SIZE + 0.5)
+
+                -- Fokus radius kecil 2 kotak agar stabil di world berlantai
+                for x = charX - 1, charX + 1 do
+                    for y = charY - 1, charY + 1 do
+                        if not (_G.PTHT_Harvest or _G.PTHT_Plant) then break end
+                        
+                        local blokSekarang = WorldManager.GetTile(x, y, 2)
+                        local blokBawah = WorldManager.GetTile(x, y - 1, 2)
+                        local targetGridPos = Vector2.new(x * TILE_SIZE, y * TILE_SIZE)
+
+                        -- [[ AUTO PLANT ]]
+                        if _G.PTHT_Plant and _G.PTHT_SlotIndex then
+                            if blokSekarang == nil and blokBawah ~= nil then
+                                if (targetGridPos - currentPos2D).Magnitude > 1.5 then
+                                    SmoothMove(MyRemote, currentPos2D, targetGridPos)
+                                    currentPos2D = targetGridPos
+                                end
+                                PlaceRemote:FireServer(Vector2.new(x, y), _G.PTHT_SlotIndex)
+                                task.wait(0.1)
+                            end
+                        end
+
+                        -- [[ AUTO HARVEST ]]
+                        if _G.PTHT_Harvest and blokSekarang then
+                            local namaBlok = WorldManager.NumberToStringMap[blokSekarang]
+                            if namaBlok and not string.match(string.lower(namaBlok), "_sapling") then
+                                if (targetGridPos - currentPos2D).Magnitude > 1.5 then
+                                    SmoothMove(MyRemote, currentPos2D, targetGridPos)
+                                    currentPos2D = targetGridPos
+                                end
+                                for i = 1, 2 do
+                                    FistRemote:FireServer(Vector2.new(x, y))
+                                    task.wait(0.05)
+                                end
+                            end
+                        end
+                    end
                 end
             end
-            
-            -- [[ PULANG ]]
-            if _G.SavedPos3D and (currentPos2D - Vector2.new(_G.SavedPos3D.X, _G.SavedPos3D.Y)).Magnitude > 1 then
-                SmoothMove(MyRemote, currentPos2D, Vector2.new(_G.SavedPos3D.X, _G.SavedPos3D.Y))
-            end
-        end
+        end)
     end
 end)
