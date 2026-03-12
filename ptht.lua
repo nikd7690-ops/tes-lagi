@@ -15,7 +15,7 @@ local MyRemote = PacketFolder and PacketFolder:FindFirstChild(LP.Name)
 -- Cari Halaman UI
 local ScreenGui = getgenv().AlphaProjectUI
 if not ScreenGui then warn("Alpha Project UI tidak ditemukan!") return end
-local Page = ScreenGui:FindFirstChild("Auto PTHTPage", true) 
+local Page = ScreenGui:FindFirstChild("PTHTPage", true)
 if not Page then warn("Halaman PTHT tidak ditemukan!") return end
 
 for _, child in pairs(Page:GetChildren()) do
