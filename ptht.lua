@@ -293,7 +293,7 @@ local function FlyToPath(path)
     if not root then return end
     
     -- Tunggu sebentar saat baru di-ON-kan agar sisa jalan kaki manualmu divalidasi server
-    task.wait(0.2)
+    task.wait(3)
     
     root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
     root.Anchored = true 
@@ -411,7 +411,7 @@ task.spawn(function()
                     -- Nol-kan juga efek dorongan dari server biar stabil
                     root.AssemblyLinearVelocity = Vector3.new(0, 0, 0) 
                     
-                    task.wait(0.2)
+                    task.wait(0.05)
                     for i = 1, 8 do FistRemote:FireServer(Vector2.new(rx, ry)); task.wait(0.1) end
                 else
                     print("Rute ke tempat Restock Buntu!")
@@ -433,7 +433,7 @@ task.spawn(function()
                     if sampai then
                         PlaceRemote:FireServer(Vector2.new(targetGrid.X, targetGrid.Y), _G.PTHT_SlotIndex)
                         table.remove(PlantQueue, 1)
-                        task.wait(0.1)
+                        task.wait(0.05)
                     end
                 else
                     print("Kotak ["..targetGrid.X..","..targetGrid.Y.."] tidak bisa dijangkau. Skip!")
