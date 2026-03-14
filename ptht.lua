@@ -310,7 +310,7 @@ local function FlyToPath(path)
         end
     end)
     
-    local SPEED = 75 -- Kecepatan luncur bot
+    local SPEED = 50 -- Kecepatan luncur bot
     
     for _, node in ipairs(path) do
         if not (_G.PTHT_Plant or _G.PTHT_Harvest) then 
@@ -323,7 +323,7 @@ local function FlyToPath(path)
         
         local distance = (root.Position - targetPos).Magnitude
         local moveTime = distance / SPEED
-        if moveTime < 0.05 then moveTime = 0.05 end 
+        if moveTime < 0.01 then moveTime = 0.01 end 
         
         -- [[ LUNCUR DULU! ]]
         local tweenInfo = TweenInfo.new(moveTime, Enum.EasingStyle.Linear)
@@ -367,7 +367,7 @@ end
 -- [[ 4. MESIN EKSEKUSI ]]
 -- ==========================================
 task.spawn(function()
-    while task.wait(0.2) do 
+    while task.wait(0.1) do 
         pcall(function()
             local root = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
             if not _G.PTHT_Plant then 
@@ -411,7 +411,7 @@ task.spawn(function()
                     -- Nol-kan juga efek dorongan dari server biar stabil
                     root.AssemblyLinearVelocity = Vector3.new(0, 0, 0) 
                     
-                    task.wait(0.5)
+                    task.wait(0.2)
                     for i = 1, 8 do FistRemote:FireServer(Vector2.new(rx, ry)); task.wait(0.1) end
                 else
                     print("Rute ke tempat Restock Buntu!")
