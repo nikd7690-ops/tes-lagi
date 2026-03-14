@@ -310,7 +310,7 @@ local function FlyToPath(path)
         end
     end)
     
-    local SPEED = 35 -- Kecepatan luncur bot
+    local SPEED = 50 -- Kecepatan luncur bot
     
     for _, node in ipairs(path) do
         if not (_G.PTHT_Plant or _G.PTHT_Harvest) then 
