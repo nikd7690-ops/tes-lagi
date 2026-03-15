@@ -293,7 +293,7 @@ local function FlyToPath(path)
     if not root then return end
     
     -- Tunggu sebentar saat baru di-ON-kan agar sisa jalan kaki manualmu divalidasi server
-    task.wait(3)
+    task.wait(0.1)
     
     root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
     root.Anchored = true 
