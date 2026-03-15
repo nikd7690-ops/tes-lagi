@@ -377,7 +377,7 @@ local Tab2 = AddTab("Auto Farm")
 local Tab3 = AddTab("Misc")
 local Tab4 = AddTab("PTHT")
 
-AddModule(Tab2, "Autofarm Menu", "Auto Farm Menu", "https://raw.githubusercontent.com/NuansaHub/NuansaHUB/refs/heads/main/AutoFarm.lua")
+AddModule(Tab2, "Autofarm Menu", "Auto Farm Menu", "https://raw.githubusercontent.com/nikd7690-ops/tes-lagi/refs/heads/main/autofarmtes.lua")
 AddModule(Tab3, "Misc", "Misc Menu", "https://raw.githubusercontent.com/NuansaHub/NuansaHUB/refs/heads/main/Mics.lua")
 AddModule(Tab4, "PTHT", "PTHT Menu", "https://raw.githubusercontent.com/nikd7690-ops/tes-lagi/refs/heads/main/ptht.lua")
 
