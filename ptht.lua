@@ -1,4 +1,4 @@
--- [[ ALPHA PROJECT - AUTO PTHT (DELTA OPTIMIZED: PLANT, HARVEST & AUTO DROP) ]] --
+-- [[ ALPHA PROJECT - AUTO PTHT (DELTA OPTIMIZED: PLANT, SMART HARVEST & AUTO DROP) ]] --
 
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
@@ -10,7 +10,7 @@ local LP = Players.LocalPlayer
 -- Remotes
 local PlaceRemote = RS:WaitForChild("Remotes"):WaitForChild("PlayerPlaceItem")
 local FistRemote = RS:WaitForChild("Remotes"):WaitForChild("PlayerFist")
-local DropRemote = RS:WaitForChild("Remotes"):FindFirstChild("PlayerDropItem") -- Asumsi nama remote drop
+local DropRemote = RS:WaitForChild("Remotes"):FindFirstChild("PlayerDropItem") 
 local PacketFolder = RS:WaitForChild("Remotes"):FindFirstChild("PlayerMovementPackets")
 local MyRemote = PacketFolder and PacketFolder:FindFirstChild(LP.Name)
 
@@ -45,9 +45,16 @@ local TILE_SIZE = 4.5
 local X_MIN, X_MAX = 0, 100 
 local Y_MIN, Y_MAX = 6, 60  
 local MAIN_LAYER = 1
-local MAX_INV_SLOTS = 35 -- [!] UBAH ANGKA INI SESUAI BATAS MAX SLOT TAS KAMU
+local MAX_INV_SLOTS = 35 
 
+-- [! TAMBAHAN: ITEMS MANAGER & RUMUS UMUR TANAMAN !]
 local WorldManager = require(RS:WaitForChild("Managers"):WaitForChild("WorldManager"))
+local ItemsManager = require(RS:WaitForChild("Managers"):WaitForChild("ItemsManager"))
+
+local function getGrowTime(rarity)
+    return (rarity * rarity * rarity) + (rarity * 30)
+end
+
 local PlantQueue = {} 
 local HarvestQueue = {}
 
@@ -60,7 +67,6 @@ local function GetInventorySaplings()
     local items = {}
     pcall(function()
         local InventoryModule = require(RS.Modules.Inventory)
-        local ItemsManager = require(RS.Managers.ItemsManager)
         for slotIndex, itemData in pairs(InventoryModule.Stacks) do
             if type(itemData) == "table" and itemData.Id then
                 local itemStringID = itemData.Id 
@@ -96,12 +102,11 @@ end
 DropBtn.MouseButton1Click:Connect(function() if not DropList.Visible then RefreshPTHTDropdown() end DropList.Visible = not DropList.Visible end)
 RefreshPTHTDropdown()
 
--- 1B. DROPDOWN AUTO DROP (BARU)
+-- 1B. DROPDOWN AUTO DROP 
 local function GetAllInventoryItems()
     local items = {}
     pcall(function()
         local InventoryModule = require(RS.Modules.Inventory)
-        local ItemsManager = require(RS.Managers.ItemsManager)
         for slotIndex, itemData in pairs(InventoryModule.Stacks) do
             if type(itemData) == "table" and itemData.Id then
                 local itemStringID = itemData.Id 
@@ -212,19 +217,56 @@ local function HasValidFloor(x, y)
     return isFloor
 end
 
+-- [! UPGRADE: HANYA HARVEST SAPLING YANG BENAR-BENAR 100% !]
 local function IsHarvestable(x, y)
-    local tile = WorldManager.GetTile(x, y, MAIN_LAYER)
-    if tile and tile ~= 0 then
-        if string.find(GetTileName(tile), "sapling") then return true end
+    local tileIdRaw, tileData = WorldManager.GetTile(x, y, MAIN_LAYER)
+    if not tileIdRaw or tileIdRaw == 0 then return false end
+    
+    -- Pastikan kita memakai format String (Teks) untuk mengecek nama dan item
+    local tileId = tileIdRaw
+    if type(tileIdRaw) == "number" then
+        tileId = WorldManager.NumberToStringMap[tileIdRaw] or tostring(tileIdRaw)
     end
+    
+    local nama = string.lower(tileId)
+    
+    if string.find(nama, "sapling") then
+        -- 1. Ambil Rarity secara AKURAT (seperti di script test)
+        local itemData = nil
+        pcall(function() itemData = ItemsManager.RequestItemData(tileId) end)
+        if not itemData and ItemsManager.ItemsData then
+            itemData = ItemsManager.ItemsData[tileId]
+        end
+        
+        local rarity = (itemData and itemData.Rarity) or 1
+        
+        -- 2. Cek waktu tanam (JIKA TIDAK ADA DATA WAKTU, ANGGAP BELUM TUMBUH)
+        if not tileData or not tileData.at then 
+            return false 
+        end
+        
+        -- 3. Hitung persentase umur
+        local plantedTime = tileData.at
+        local totalGrowTime = getGrowTime(rarity)
+        local timeElapsed = workspace:GetServerTimeNow() - plantedTime
+        
+        -- 4. Pengecekan mutlak 100%
+        if timeElapsed >= totalGrowTime then
+            return true -- SUDAH 100%, SIAP PANEN!
+        else
+            return false -- SKIP, MASIH BAYI!
+        end
+    end
+    
     return false
 end
 
 local function IsPassable(x, y)
     if x < X_MIN or x > X_MAX or y < Y_MIN or y > Y_MAX then return false end
-    local tile = WorldManager.GetTile(x, y, MAIN_LAYER)
-    if tile and tile ~= 0 then
-        local nama = GetTileName(tile)
+    local tileId, tileData = WorldManager.GetTile(x, y, MAIN_LAYER)
+    if tileId and tileId ~= 0 then
+        local nama = GetTileName(tileId)
+        -- Bebas tembus bayang kalau itu adalah sapling, seed, dll
         if not string.find(nama, "background") and not string.find(nama, "door") and not string.find(nama, "sapling") and not string.find(nama, "seed") and not string.find(nama, "sign") then
             if not IsHarvestable(x, y) then return false end
         end
@@ -339,25 +381,21 @@ task.spawn(function()
 
             local Inv = require(RS.Modules.Inventory)
             
-            -- [[ PRIORITAS 0: CEK ITEM TUMBAL MENCAPAI 200 -> AUTO DROP ]]
-            local dropSlot = nil
-            local dropAmount = 0
+            -- [[ PRIORITAS 0: CEK ITEM TUMBAL MULTI-SLOT -> AUTO DROP ]]
+            local TARGET_SLOT_COUNT = 3 -- [!] UBAH ANGKA INI UNTUK CUSTOM MAKSIMAL SLOT
             
-            -- Pastikan sudah milih item tumbal dan udah set posisinya
             if _G.PTHT_DropItemID and _G.PTHT_RestockPos2D and root then
-                -- Cek apakah item tumbal jumlahnya sudah 200 (atau lebih)
+                local slotsToDrop = {}
+                
+                -- 1. Hitung ada berapa banyak slot yang berisi item tumbal
                 for slot, item in pairs(Inv.Stacks) do
                     if type(item) == "table" and item.Id == _G.PTHT_DropItemID then
-                        if (item.Amount or 0) >= 200 then
-                            dropSlot = slot
-                            dropAmount = item.Amount
-                            break
-                        end
+                        table.insert(slotsToDrop, {slotIndex = slot, amount = item.Amount})
                     end
                 end
 
-                -- Kalau nemu slot yang jumlahnya 200, gas buang ke Save Pos!
-                if dropSlot then
+                -- 2. Kalau jumlah slotnya sudah mencapai target (misal 10 slot), eksekusi Drop!
+                if #slotsToDrop >= TARGET_SLOT_COUNT then
                     local rx = math.floor(_G.PTHT_RestockPos2D.X / TILE_SIZE + 0.5)
                     local ry = math.floor(_G.PTHT_RestockPos2D.Y / TILE_SIZE + 0.5)
                     local cx = math.floor(root.Position.X / TILE_SIZE + 0.5)
@@ -370,55 +408,53 @@ task.spawn(function()
                             root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
                             task.wait(0.3)
                             
-                            -- [! EKSEKUSI DROP (TWO-STEP VERIFICATION) !]
                             local PlayerDrop = RS:WaitForChild("Remotes"):FindFirstChild("PlayerDrop")
                             local UIPromptEvent = RS:WaitForChild("Managers"):WaitForChild("UIManager"):FindFirstChild("UIPromptEvent")
 
                             if PlayerDrop and UIPromptEvent then
-                                -- Langkah 1: Trigger menu drop (Kirim Nomor Slot ke Server)
-                                pcall(function() PlayerDrop:FireServer(dropSlot) end)
-                                
-                                -- Jeda sangat singkat membiarkan UI muncul secara visual
-                                task.wait(0.15)
-                                
-                                -- Langkah 2: Konfirmasi Drop Semua Jumlah Item (Bypass Tombol)
-                                local confirmArgs = {
-                                    ["ButtonAction"] = "drp",
-                                    ["Inputs"] = {
-                                        ["amt"] = tostring(dropAmount) 
+                                -- 3. Looping untuk membuang SEMUA slot yang terkumpul tadi satu per satu
+                                for i, dropData in ipairs(slotsToDrop) do
+                                    local currentSlot = dropData.slotIndex
+                                    local currentAmount = dropData.amount
+                                    
+                                    -- Langkah A: Panggil UI Drop
+                                    pcall(function() PlayerDrop:FireServer(currentSlot) end)
+                                    task.wait(0.15)
+                                    
+                                    -- Langkah B: Konfirmasi Jumlah
+                                    local confirmArgs = { 
+                                        ["ButtonAction"] = "drp", 
+                                        ["Inputs"] = { ["amt"] = tostring(currentAmount) } 
                                     }
-                                }
-                                pcall(function() UIPromptEvent:FireServer(confirmArgs) end)
-                                
-                                -- [[ LANGKAH 3: TUTUP PAKSA UI POPUP ]]
-                                -- Mencari jendela popup di layar dan langsung disembunyikan
-                                pcall(function()
-                                    local PlayerGui = LP:FindFirstChild("PlayerGui")
-                                    if PlayerGui then
-                                        for _, gui in pairs(PlayerGui:GetDescendants()) do
-                                            -- Deteksi teks popup (contoh: "Drop Magenta Block?")
-                                            if gui:IsA("TextLabel") and string.find(gui.Text, "Drop ") and string.find(gui.Text, "?") then
-                                                -- Cari bingkai (Frame) utamanya dan matikan
-                                                local window = gui:FindFirstAncestorWhichIsA("Frame")
-                                                if window then window.Visible = false end
+                                    pcall(function() UIPromptEvent:FireServer(confirmArgs) end)
+                                    task.wait(0.1)
+                                    
+                                    -- Langkah C: Bersihkan Layar dari Jendela UI
+                                    pcall(function()
+                                        local PlayerGui = LP:FindFirstChild("PlayerGui")
+                                        if PlayerGui then
+                                            for _, gui in pairs(PlayerGui:GetDescendants()) do
+                                                if gui:IsA("TextLabel") and string.find(gui.Text, "Drop ") and string.find(gui.Text, "?") then
+                                                    local window = gui:FindFirstAncestorWhichIsA("Frame")
+                                                    if window then window.Visible = false end
+                                                end
                                             end
                                         end
-                                    end
-                                end)
-                                
-                                print("Berhasil membuang " .. tostring(dropAmount) .. " item dari slot " .. tostring(dropSlot))
+                                    end)
+                                    
+                                    print("🗑️ Berhasil membuang " .. tostring(currentAmount) .. " item dari slot " .. tostring(currentSlot))
+                                    task.wait(0.2) -- Jeda antar pembuangan slot biar gak dikira spam oleh server
+                                end
                             else
-                                warn("ERROR: Remote PlayerDrop atau UIPromptEvent tidak ditemukan di game ini!")
+                                warn("ERROR: Remote PlayerDrop atau UIPromptEvent tidak ditemukan!")
                             end
-                            
-                            task.wait(0.05)
+                            task.wait(0.5)
                         end
                     end
-                    return -- Reset Loop agar bot tidak lanjut manen/nanam sebelum selesai drop
+                    return -- Reset Loop setelah selesai buang semua slot
                 end
             end
 
-            -- Evaluasi Butuh Scan Ulang
             local butuhScan = false
             if _G.PTHT_Plant and #PlantQueue == 0 then butuhScan = true end
             if _G.PTHT_Harvest and #HarvestQueue == 0 then butuhScan = true end
